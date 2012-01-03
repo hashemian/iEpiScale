@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">iEpi Scale</string>
+    <string name="title">iEpiScale</string>
+    <string name="textEditHint">Connect the phone to the board to see the weight.</string>
+    <string name="kilogram">KG</string>
+    <string name="pound">Lbs</string>
+    <string name="connect">Connect</string>
+    <string name="disconnect">Disconnect</string>
+</resources>

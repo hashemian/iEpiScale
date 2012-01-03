@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout 
+	xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="fill_parent"
+    android:layout_height="fill_parent" 
+    android:orientation="vertical">
+	<TextView  
+	    android:layout_width="fill_parent" 
+	    android:layout_height="wrap_content"
+	    android:text="@string/title"/>
+	<EditText 
+		android:hint="@string/textEditHint"
+		android:id="@+id/result"
+		android:layout_width="fill_parent" 
+	    android:layout_height="wrap_content"/>
+	<RadioGroup
+		android:checkedButton="@+id/rbtnKg"
+		android:orientation="horizontal"
+		android:id="@+id/rbtngroupScale"
+		android:layout_width="fill_parent"
+		android:layout_height="wrap_content">
+		<RadioButton 
+			android:text="@string/pound" 
+			android:id="@+id/rbtnLbs" 
+			android:layout_width="wrap_content" 
+			android:layout_height="wrap_content"/>
+		<RadioButton 
+			android:text="@string/kilogram" 
+			android:id="@+id/rbtnKg" 
+			android:layout_width="wrap_content" 
+			android:layout_height="wrap_content"/>
+	</RadioGroup>
+	<Button 
+		android:text="@string/connect" 
+		android:id="@+id/btnConnect" 
+		android:layout_width="fill_parent" 
+		android:layout_height="wrap_content"/>
+	<Button 
+		android:text="@string/disconnect" 
+		android:id="@+id/btnDisconnect" 
+		android:layout_width="fill_parent" 
+		android:layout_height="wrap_content"/>
+</LinearLayout>
