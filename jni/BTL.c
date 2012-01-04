@@ -60,6 +60,9 @@ struct balance_cal cal_data;
 int isBalanceDataValid = FALSE;
 struct wd_balance_mesg *balance_mesg;
 
+int blnShouldRouterThreadContinue = 1;
+int blnShouldStatusThreadContinue = 1;
+
 jint JNI_OnLoad(JavaVM *vm, void *reserved)
 {
 	//native lib loaded
@@ -143,6 +146,7 @@ jint Java_iEpi_Scale_BoardInterface_ConnectCalibrateRead(JNIEnv* env, jobject th
 	
 	return OPERATION_SUCCESSFUL;
 }
+
 /* Discover bluetooth devices and read Report Descriptor
 	Returns: 
 		WII_CONNECTION_CREATION_ERR		If connection to wii failed
@@ -153,7 +157,7 @@ jint Java_iEpi_Scale_BoardInterface_ConnectCalibrateRead(JNIEnv* env, jobject th
 */
 jint Java_iEpi_Scale_BoardInterface_intConnect( JNIEnv* env,jobject thiz, int scantime )
 {
-	__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG, "Discover: Entered the discovery function - Revision 37"); 
+	__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG, "Discover: Entered the discovery function - Revision 39"); 
 	//---
 	bdaddr_t 	btDevAddr, dev;
 	bdaddr_t 	src, dst, dst_first;
@@ -388,26 +392,27 @@ void Java_iEpi_Scale_BoardInterface_stopReadingData( JNIEnv* env, jobject thiz)
 */
 jint Java_iEpi_Scale_BoardInterface_disconnect()
 {
-	if (wiimote_obj->ctl_socket != -1) 
-	{
-		if (close(wiimote_obj->ctl_socket))
-		{
-			__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG, "Error in closing control socket.");
-			return GENERAL_ERROR;
-		}
-	}
-	if (wiimote_obj->int_socket != -1) 
-	{
-		if (close(wiimote_obj->int_socket)) 
-		{
-			__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG, "Error in closing interrupt socket.");
-			return GENERAL_ERROR;
-		}
-	}
-
+	blnShouldRouterThreadContinue = 0;
+	blnShouldStatusThreadContinue = 0;
+		
 	if (wiimote_obj) 
 	{
-		void *pthread_ret;
+		if (wiimote_obj->ctl_socket != -1) 
+		{
+			if (close(wiimote_obj->ctl_socket))
+			{
+				__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG, "Error in closing control socket.");
+				return GENERAL_ERROR;
+			}
+		}
+		if (wiimote_obj->int_socket != -1) 
+		{
+			if (close(wiimote_obj->int_socket)) 
+			{
+				__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG, "Error in closing interrupt socket.");
+				return GENERAL_ERROR;
+			}
+		}
 		
 		/* Close threads *
 		pthread_cancel(wiimote_obj->router_thread);
@@ -579,6 +584,7 @@ wiimote_t *wd_create_new_wii(int ctl_socket, int int_socket, int flags)
 	/* Set rw_status before starting router thread */
 	new_wiimote->rw_status = RW_IDLE;
 
+	blnShouldRouterThreadContinue = 1;
 	/* Launch interrupt socket listener and dispatch threads */
 	if (pthread_create(&new_wiimote->router_thread, NULL, (void *(*)(void *))&wd_router_thread, new_wiimote)) 
 	{
@@ -586,7 +592,8 @@ wiimote_t *wd_create_new_wii(int ctl_socket, int int_socket, int flags)
 		goto ERR_HND;
 	}
 	router_thread_init = 1;
-	
+
+	blnShouldStatusThreadContinue = 1;	
 	if (pthread_create(&new_wiimote->status_thread, NULL, (void *(*)(void *))&wd_status_thread, new_wiimote)) 
 	{
 		__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG, "wd_create_new_wii: Thread creation error (status thread)");
@@ -743,12 +750,12 @@ int wd_verify_handshake(struct wiimote *wiimote)
 
 int wd_full_read(int fd, void *buf, size_t len)
 {
-	__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG,"wd_full_read: Full read is called.");
+	//__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG,"wd_full_read: Full read is called.");
 	ssize_t last_len = 0;
 
 	do 
 	{
-		__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG,"wd_full_read: Started the do loop.");
+		//__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG,"wd_full_read: Started the do loop.");
 		if ((last_len = read(fd, buf, len)) == -1) 
 		{
 			__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG,"wd_full_read: Read failed!");
@@ -770,7 +777,7 @@ void *wd_router_thread(struct wiimote *wiimote)
 	struct mesg_array ma;
 	char err, print_clock_err = 1;
 
-	while (1) 
+	while (blnShouldRouterThreadContinue) 
 	{
 		/* Read packet */
 		len = read(wiimote->int_socket, buf, READ_BUF_LEN);
@@ -800,7 +807,7 @@ void *wd_router_thread(struct wiimote *wiimote)
 			}
 
 			/* Main switch */
-			if(buf[1] != 50)
+			if(1)//buf[1] != 50)
 			{
 				__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG,"%.2X %.2X %.2X %.2X  %.2X %.2X %.2X %.2X\n", buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7]);
 				__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG,"%.2X %.2X %.2X %.2X  %.2X %.2X %.2X %.2X\n", buf[8], buf[9], buf[10], buf[11], buf[12], buf[13], buf[14], buf[15]);
@@ -889,6 +896,7 @@ void *wd_router_thread(struct wiimote *wiimote)
 void *wd_status_thread(struct wiimote *wiimote)
 {
 	__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG,"Started wd_status_thread");
+	
 	struct mesg_array ma;
 	struct wd_status_mesg *status_mesg;
 	unsigned char buf[2];
@@ -896,7 +904,7 @@ void *wd_status_thread(struct wiimote *wiimote)
 	ma.count = 1;
 	status_mesg = &ma.array[0].status_mesg;
 
-	while (1) 
+	while (blnShouldStatusThreadContinue) 
 	{
 		if (wd_full_read(wiimote->status_pipe[0], status_mesg, sizeof *status_mesg)) 
 		{
@@ -1010,11 +1018,13 @@ void *wd_status_thread(struct wiimote *wiimote)
 int wd_process_ext(struct wiimote *wiimote, unsigned char *data, unsigned char len, struct mesg_array *ma)
 {
 	isBalanceDataValid = FALSE;
+//	__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG,"wd_process_ext: Set the balance data as invalid. Going to get a new set.");
 	int i;
 
 	switch (wiimote->state.ext_type) 
 	{
 	case WD_EXT_NONE:
+		__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG,"There is no extension! can you believe it?");
 		break;
 	case WD_EXT_UNKNOWN:
 		__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG,"Received unknown extension report");
@@ -1034,12 +1044,12 @@ int wd_process_ext(struct wiimote *wiimote, unsigned char *data, unsigned char l
 			balance_mesg->right_bottom = ((uint16_t)data[2]<<8 | (uint16_t)data[3]);
 			balance_mesg->left_top = ((uint16_t)data[4]<<8 | (uint16_t)data[5]);
 			balance_mesg->left_bottom = ((uint16_t)data[6]<<8 | (uint16_t)data[7]);
-/*			__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG,"Updated the weight again! RT: %d, RB: %d, LT: %d, LB: %d, COUNT: %d", 
-					balance_mesg->right_top, 
-					balance_mesg->right_bottom, 
-					balance_mesg->left_top, 
-					balance_mesg->left_bottom,
-					ma->count);*/
+//			__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG,"Updated the weight again! RT: %d, RB: %d, LT: %d, LB: %d, COUNT: %d", 
+//					balance_mesg->right_top, 
+//					balance_mesg->right_bottom, 
+//					balance_mesg->left_top, 
+//					balance_mesg->left_bottom,
+//					ma->count);
 			isBalanceDataValid = TRUE;
 		}
 		break;
@@ -1047,6 +1057,7 @@ int wd_process_ext(struct wiimote *wiimote, unsigned char *data, unsigned char l
 		__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG,"Received motionplus extension report");
 		break;
 	}
+//	__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG,"wd_process_ext: Done.");
 	return 0;
 }
 

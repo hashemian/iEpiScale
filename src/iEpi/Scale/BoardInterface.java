@@ -44,7 +44,7 @@ public class BoardInterface
 	 * @return
 	 * 0 if the operation is successful, -1 otherwise.
 	 */
-	public native int	 	getCalibrationData	( );
+	public native int	 	getCalibrationData 	( );
 	/**
 	 * Sets the report mode of the board to continuously report the weight. This causes the board to continuously
 	 * report it's state to the phone. 

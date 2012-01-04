@@ -36,6 +36,7 @@ import android.content.pm.PackageManager;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.KeyEvent;
 import android.view.View;
 import android.view.View.OnClickListener;
 import android.widget.Button;
@@ -71,7 +72,7 @@ public class iEpiScale extends Activity
 	/**
 	 * Represents the revision number of the current code.
 	 */
-	private int 				intRevision 		= 51;
+	private int 				intRevision 		= 70;
 	/**
 	 * UI container of the current activity.
 	 */
@@ -87,6 +88,9 @@ public class iEpiScale extends Activity
 	final static String 		LOG_TAG 			= "iEpiScale";
 	private	Button				btnConnect;
 	private Button				btnDisconnect;
+	private Button				btnConnectOnly;
+	private Button				btnCalibrate;
+	private Button				btnRead;
 	private RadioButton			rbtnLbs;
 	private	RadioButton			rbtnKg;
 	private EditText			txtResult;
@@ -133,42 +137,21 @@ public class iEpiScale extends Activity
 	{
 		btnConnect = (Button) findViewById(R.id.btnConnect);
 		btnDisconnect = (Button) findViewById(R.id.btnDisconnect);
+		btnConnectOnly = (Button) findViewById(R.id.btnConnectOnly);
+		btnCalibrate = (Button) findViewById(R.id.btnCalibrate);
+		btnRead = (Button) findViewById(R.id.btnRead);
 		rbtnKg = (RadioButton) findViewById(R.id.rbtnKg);
 		rbtnLbs = (RadioButton) findViewById(R.id.rbtnLbs);
 		txtResult = (EditText) findViewById(R.id.result);
 				
 		btnConnect.setOnClickListener(ConnectKey);
 		btnDisconnect.setOnClickListener(DisconnectKey);
+		
+		btnConnectOnly.setOnClickListener(ConnectOnlyKey);
+		btnCalibrate.setOnClickListener(CalibrateKey);
+		btnRead.setOnClickListener(ReadKey);
+		
 		txtResult.setKeyListener(null);
-		
-        // I am trying to move this to the XMl file
-        // so there is no need to initialize it 
-        // manually anymore. The variable definition
-		// and checking it is only for the sake of not receiving a ridicules warning!
-		int a = 1;
-		if(a == 1)
-			return;
-		
-		// Quit if the ui has already been generated.
-		if (ui != null)
-			return;
-
-		// Create the ui.
-		ScrollView scrollView = new ScrollView(this);
-		ui = new LinearLayout(this);
-		ui.setOrientation(LinearLayout.VERTICAL);
-		scrollView.addView(ui);
-		setContentView(scrollView);
-
-		//ConnectKey();
-		ConnectOnlyKey();
-		CalibrateKey();
-		ReadKey();
-		//DisconnectKey();
-		
-		TextView txtStatus = new TextView(this);
-		txtStatus.setId(txtStatusID);
-		ui.addView(txtStatus);
 	}
 	
 	private OnClickListener ConnectKey = new OnClickListener() 
@@ -182,7 +165,7 @@ public class iEpiScale extends Activity
 			}
 				
 			new AlertDialog.Builder(v.getContext())
-				.setTitle("Confirm")
+				.setTitle("Confirm - " + intRevision)
 				.setMessage("Please activate the board by pressing the sync button, and then click \"OK\" to continue?")
 				.setPositiveButton("OK", new DialogInterface.OnClickListener() 
 										{
@@ -241,11 +224,11 @@ public class iEpiScale extends Activity
 	{
 		public void onClick(View v) 
 		{
-			if(!blnIsConnected)
-			{
-				txtResult.setText("You are not currently connected to the board.");
-				return;
-			}
+//			if(!blnIsConnected)
+//			{
+//				txtResult.setText("You are not currently connected to the board.");
+//				return;
+//			}
 			
 			// First stop reading from the board ...
 			Log.d(LOG_TAG,"Set the flag to stop the thread!");
@@ -269,7 +252,7 @@ public class iEpiScale extends Activity
 		else
 			txtResult.setText("Unknown error type.");
 		
-        PackageManager packageManager = getPackageManager();
+/*        PackageManager packageManager = getPackageManager();
 
         Intent surveyScreenIntent = packageManager.getLaunchIntentForPackage("com.surveyapp");
 
@@ -278,7 +261,7 @@ public class iEpiScale extends Activity
 		surveyScreenIntent.putExtra("com.iSurveyor.SurveyXML", surveyID);
 		int timeOutInMS = -1; //-1 indicates NO timeout
 		surveyScreenIntent.putExtra("com.iSurveyor.SurveyTimeOutInMS", timeOutInMS);
-		startActivityForResult(surveyScreenIntent, 0);		
+		startActivityForResult(surveyScreenIntent, 0);*/		
 	}
 	
 	private class WeightRep extends AsyncTask<Void,Void,Void>
@@ -400,6 +383,18 @@ public class iEpiScale extends Activity
 	{
 		super.onPause();
 		Log.d(LOG_TAG, "onPause called.");
+		if(boardInterface != null)
+		{
+//			if(blnIsConnected)
+//			{
+				Log.d(LOG_TAG, "onPause: Interface is not null. Going to call disconnect!");
+				boardInterface.disconnect();
+//			}
+			boardInterface = null;
+		}
+		else
+			Log.d(LOG_TAG, "onPause: Interface was null. Skipped disconnection.");
+		finish();
 	}
 	
 	public void onResume()
@@ -416,9 +411,36 @@ public class iEpiScale extends Activity
 		
 		if(boardInterface != null)
 		{
-			boardInterface.disconnect();
+//			if(blnIsConnected)
+//			{
+				Log.d(LOG_TAG, "onStop: Interface is not null. Going to call disconnect!");
+				boardInterface.disconnect();
+//			}
 			boardInterface = null;
 		}
+		else
+			Log.d(LOG_TAG, "onStop: Interface was null. Skipped disconnection.");
+		finish();
+	}
+	
+	public boolean onKeyDown(int keyCode, KeyEvent event)
+	{
+	    if ((keyCode == KeyEvent.KEYCODE_BACK) || (keyCode == KeyEvent.KEYCODE_HOME))
+	    {
+			if(boardInterface != null)
+			{
+//				if(blnIsConnected)
+//				{
+					Log.d(LOG_TAG, "onKeyDown: Interface is not null. Going to call disconnect!");
+					boardInterface.disconnect();
+//				}
+				boardInterface = null;
+			}
+			else
+				Log.d(LOG_TAG, "onKeyDown: Interface was null. Skipped disconnection.");
+	        finish();
+	    }
+	    return super.onKeyDown(keyCode, event);
 	}
 	
 	public void onDestroy()
@@ -429,53 +451,45 @@ public class iEpiScale extends Activity
 		
 		if(boardInterface != null)
 		{
-			boardInterface.disconnect();
+			if(blnIsConnected)
+			{
+				Log.d(LOG_TAG, "onDestroy: Interface is not null. Going to call disconnect!");
+				boardInterface.disconnect();
+			}
 			boardInterface = null;
 		}
+		else
+			Log.d(LOG_TAG, "onDestroy: Interface was null. Skipped disconnection.");
 	}
 	
-	public void ConnectOnlyKey() 
+	private OnClickListener ConnectOnlyKey = new OnClickListener() 
 	{
-		Button btnConnectOnly = new Button(this);
-		btnConnectOnly.setText("Connect Only");
-		btnConnectOnly.setOnClickListener(new View.OnClickListener() 
+		public void onClick(View v)
 		{
-			public void onClick(View v) 
-			{
-				int result = boardInterface.intConnect(3);
-				((TextView)findViewById(txtStatusID)).setText("Returned connect result is: " +  result);
-			}
-		});
-		ui.addView(btnConnectOnly);
-	}
+			int result = boardInterface.intConnect(3);
+			txtResult.setText("Returned connect result is: " +  result);
+		}
+	};
 
-	public void CalibrateKey() 
+	private OnClickListener CalibrateKey = new OnClickListener() 
 	{
-		Button btnCalibrate = new Button(this);
-		btnCalibrate.setText("Calibrate");
-		btnCalibrate.setOnClickListener(new View.OnClickListener() 
+		public void onClick(View v)
 		{
-			public void onClick(View v) 
-			{
-				int result = boardInterface.getCalibrationData();
-				((TextView)findViewById(txtStatusID)).setText("Returned calibrate result is: " +  result);
-			}
-		});
-		ui.addView(btnCalibrate);
-	}
+			int result = boardInterface.getCalibrationData();
+			txtResult.setText("Returned calibrate result is: " +  result);
+		}
+	};
 
-	public void ReadKey() 
+	private OnClickListener ReadKey = new OnClickListener() 
 	{
-		Button btnRead = new Button(this);
-		btnRead.setText("Read");
-		btnRead.setOnClickListener(new View.OnClickListener() 
+		public void onClick(View v)
 		{
-			public void onClick(View v) 
-			{
-				int result = boardInterface.startReadingData();
-				((TextView)findViewById(txtStatusID)).setText("Returned read result is: " +  result);
-			}
-		});
-		ui.addView(btnRead);
-	}	
+			int result = boardInterface.startReadingData();
+			txtResult.setText("Returned read result is: " +  result);
+			blnShouldStop = false;
+			new WeightRep().execute();
+			blnIsConnected = true;
+		}
+	};
+
 }

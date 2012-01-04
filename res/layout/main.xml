@@ -40,4 +40,19 @@
 		android:id="@+id/btnDisconnect" 
 		android:layout_width="fill_parent" 
 		android:layout_height="wrap_content"/>
+	<Button 
+		android:text="Connect Only" 
+		android:id="@+id/btnConnectOnly" 
+		android:layout_width="fill_parent" 
+		android:layout_height="wrap_content"/>
+	<Button 
+		android:text="Calibrate" 
+		android:id="@+id/btnCalibrate" 
+		android:layout_width="fill_parent" 
+		android:layout_height="wrap_content"/>
+	<Button 
+		android:text="Read" 
+		android:id="@+id/btnRead" 
+		android:layout_width="fill_parent" 
+		android:layout_height="wrap_content"/>
 </LinearLayout>
