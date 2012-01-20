@@ -49,6 +49,7 @@
 #define SOCKET_OPEN_FAILURE 		-4
 #define NO_BT_DEV_FOUND				-5
 #define NO_CONNECTION_CREATED		-6
+#define BATTERY_LOW					-7
 #define OPERATION_SUCCESSFUL 		1
 
 /* Variable Definition */
@@ -63,14 +64,23 @@ struct wd_balance_mesg *balance_mesg;
 int blnShouldRouterThreadContinue = 1;
 int blnShouldStatusThreadContinue = 1;
 
+int blnIsRouterThreadWorking = 0;
+int blnIsStatusThreadWorking = 0;
+
+int intBatteryLevel = 0;
+
+JavaVM* jvm = 0;
+
 jint JNI_OnLoad(JavaVM *vm, void *reserved)
 {
+	jvm = vm;
 	//native lib loaded
 	return JNI_VERSION_1_2; //1_2 1_4
 }
 
 void JNI_OnUnload(JavaVM *vm, void *reserved)
 {
+	jvm = 0;
 	//__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG, "Loaded revision 36");
 	//native lib unloaded
 }
@@ -121,8 +131,15 @@ jint Java_iEpi_Scale_BoardInterface_ConnectCalibrateRead(JNIEnv* env, jobject th
 		return result;
 	}
 	
-	__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG, "StartupModule: Going to read data from the board ...");
+	__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG, "StartupModule: Making sure the battery level is enough ...");
 	sleep(2);
+	if(intBatteryLevel <= 0xB9)
+	{
+		__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG, "StartupModule: Battery level was %.2X ...", intBatteryLevel);
+		Java_iEpi_Scale_BoardInterface_disconnect();
+		return BATTERY_LOW;
+	}
+	__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG, "StartupModule: Going to read data from the board ...");
 	//
 	// Start reading data from the board ...
 	//
@@ -141,9 +158,10 @@ jint Java_iEpi_Scale_BoardInterface_ConnectCalibrateRead(JNIEnv* env, jobject th
 	if(blnStartedReading == FALSE)
 	{
 		Java_iEpi_Scale_BoardInterface_disconnect();
+		__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG, "StartupModule: Reading failed. Returning error ...");
 		return result;
 	}
-	
+	__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG, "StartupModule: Done. Connection successful. ");
 	return OPERATION_SUCCESSFUL;
 }
 
@@ -237,7 +255,8 @@ jint Java_iEpi_Scale_BoardInterface_intConnect( JNIEnv* env,jobject thiz, int sc
 		// Compare the name of the recently found device with the Nintendo Balance Board name ...
 		//
 		if((strcmp(name,"Nintendo RVL-WBC-01") == 0) ||
-		   (strcmp(strAddr,"00:26:59:2C:86:E8") == 0))
+		   (strcmp(strAddr,"00:26:59:2C:86:E8") == 0) ||
+		   (strcmp(strAddr,"01:2A:19:41:53:E2")))
 		{
 			__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG, "Discover: Found a balance board ...");
 			struct sockaddr_l2 remote_addr;
@@ -304,6 +323,7 @@ jint Java_iEpi_Scale_BoardInterface_intConnect( JNIEnv* env,jobject thiz, int sc
 					__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG, "Error in closing interrupt socket.");
 				}
 			}
+			__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG, "intConnect: Returning WII_CONNECTION_CREATION_ERR ...");
 			return WII_CONNECTION_CREATION_ERR;
 		}
 		else
@@ -394,25 +414,32 @@ jint Java_iEpi_Scale_BoardInterface_disconnect()
 {
 	blnShouldRouterThreadContinue = 0;
 	blnShouldStatusThreadContinue = 0;
-		
+	__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG, "Disconnect called.");
 	if (wiimote_obj) 
 	{
-		if (wiimote_obj->ctl_socket != -1) 
-		{
-			if (close(wiimote_obj->ctl_socket))
-			{
-				__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG, "Error in closing control socket.");
-				return GENERAL_ERROR;
-			}
-		}
 		if (wiimote_obj->int_socket != -1) 
 		{
 			if (close(wiimote_obj->int_socket)) 
 			{
 				__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG, "Error in closing interrupt socket.");
-				return GENERAL_ERROR;
+				//return GENERAL_ERROR;
 			}
 		}
+
+		if (wiimote_obj->ctl_socket != -1) 
+		{
+			if (close(wiimote_obj->ctl_socket))
+			{
+				__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG, "Error in closing control socket.");
+				//return GENERAL_ERROR;
+			}
+		}
+		
+		int result1 = pthread_kill(wiimote_obj->router_thread,SIGUSR1);
+		int result2 = pthread_kill(wiimote_obj->status_thread,SIGUSR1);
+		
+		__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG, "Router thread is killed and the result is: %.2X", result1);
+		__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG, "Router thread is killed and the result is: %.2X", result2);
 		
 		/* Close threads *
 		pthread_cancel(wiimote_obj->router_thread);
@@ -443,17 +470,17 @@ jint Java_iEpi_Scale_BoardInterface_disconnect()
 		if (close(wiimote_obj->mesg_pipe[0]) || close(wiimote_obj->mesg_pipe[1])) 
 		{
 			__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG, "PIPE CLOSE ERROR (MESSAGE PIPE)");
-			return GENERAL_ERROR;
+			//return GENERAL_ERROR;
 		}
 		if (close(wiimote_obj->status_pipe[0]) || close(wiimote_obj->status_pipe[1])) 
 		{
 			__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG, "PIPE CLOSE ERROR (STATUS PIPE)");
-			return GENERAL_ERROR;
+			//return GENERAL_ERROR;
 		}
 		if (close(wiimote_obj->rw_pipe[0]) || close(wiimote_obj->rw_pipe[1])) 
 		{
 			__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG, "PIPE CLOSE ERROR (RW PIPE)");
-			return GENERAL_ERROR;
+			//return GENERAL_ERROR;
 		}
 		free(wiimote_obj);
 	}
@@ -494,6 +521,11 @@ jint Java_iEpi_Scale_BoardInterface_getBottomRightValue()
 jint Java_iEpi_Scale_BoardInterface_getBottomLeftValue()
 {
 	return balance_mesg->left_bottom;
+}
+
+jint Java_iEpi_Scale_BoardInterface_getBatteryLevel()
+{
+	return intBatteryLevel;
 }
 
 /* Creates a new Wiimote object based on the connection information provided.
@@ -604,7 +636,7 @@ wiimote_t *wd_create_new_wii(int ctl_socket, int int_socket, int flags)
 	/* Success!  Update state */
 	memset(&new_wiimote->state, 0, sizeof new_wiimote->state);
 	new_wiimote->mesg_callback = NULL;
-	
+	__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG, "wd_create_new_wii: Returning newly created mote.");
 	return new_wiimote;
 
 ERR_HND:
@@ -636,14 +668,14 @@ int wd_read(wiimote_t *wiimote, uint8_t flags, uint32_t offset, uint16_t len, vo
 	buf[5]=(unsigned char)( len         & 0xFF);
 
 	/* Setup read info */
-	__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG,"wd_read: setup read info.");
+	//__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG,"wd_read: setup read info.");
 	wiimote->rw_status = RW_READ;
 
 	/* TODO: Document: user is responsible for ensuring that read/write
 	 * operations are not in flight while disconnecting.  Nothing serious,
 	 * just accesses to freed memory */
 	/* Send read request packet */
-	__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG,"wd_read: Send read request packet.");
+	//__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG,"wd_read: Send read request packet.");
 	if (wd_send_rpt(wiimote, 0, RPT_READ_REQ, RPT_READ_REQ_LEN, buf)) 
 	{
 		__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG, "wd_read: Report send error (read)");
@@ -653,7 +685,7 @@ int wd_read(wiimote_t *wiimote, uint8_t flags, uint32_t offset, uint16_t len, vo
 
 	/* TODO:Better sanity checks (offset) */
 	/* Read packets */
-	__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG,"wd_read: Going to read packets ....");
+	//__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG,"wd_read: Going to read packets ....");
 	for (cursor = data; cursor - (unsigned char *)data < len;cursor += mesg.len) 
 	{
 		if (wd_full_read(wiimote->rw_pipe[0], &mesg, sizeof mesg)) 
@@ -681,7 +713,7 @@ int wd_read(wiimote_t *wiimote, uint8_t flags, uint32_t offset, uint16_t len, vo
 			ret = -1;
 			goto CODA;
 		}
-		__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG,"wd_read: No error, only one memory copy has left.");
+		//__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG,"wd_read: No error, only one memory copy has left.");
 		memcpy(cursor, &mesg.data, mesg.len);
 	}
 
@@ -714,11 +746,13 @@ int wd_send_rpt(wiimote_t *wiimote, uint8_t flags, uint8_t report, size_t len, c
 	if (write(wiimote->ctl_socket, buf, len+2) != (ssize_t)(len+2)) 
 	{
 		free(buf);
+		__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG, "wd_send_rpt: error in calling write");
 		return -1;
 	}
 	else if (wd_verify_handshake(wiimote)) 
 	{
 		free(buf);
+		__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG, "wd_send_rpt: error in calling verify handshake");
 		return -1;
 	}
 	__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG,"wd_send_rpt: Done requesting. Going back.");
@@ -750,7 +784,7 @@ int wd_verify_handshake(struct wiimote *wiimote)
 
 int wd_full_read(int fd, void *buf, size_t len)
 {
-	//__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG,"wd_full_read: Full read is called.");
+	__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG,"wd_full_read: Full read is called.");
 	ssize_t last_len = 0;
 
 	do 
@@ -761,7 +795,7 @@ int wd_full_read(int fd, void *buf, size_t len)
 			__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG,"wd_full_read: Read failed!");
 			return -1;
 		}
-		__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG,"wd_full_read: Read done. len = %d, buf = %d",len, buf);
+		//__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG,"wd_full_read: Read done. len = %d, buf = %d",len, buf);
 		len -= last_len;
 		buf += last_len;
 	} while (len > 0);
@@ -776,7 +810,11 @@ void *wd_router_thread(struct wiimote *wiimote)
 	ssize_t len;
 	struct mesg_array ma;
 	char err, print_clock_err = 1;
-
+	
+	JNIEnv* env = 0;
+	(*jvm)->AttachCurrentThread(jvm,&env, NULL);
+	blnIsRouterThreadWorking = 1;
+	
 	while (blnShouldRouterThreadContinue) 
 	{
 		/* Read packet */
@@ -807,21 +845,34 @@ void *wd_router_thread(struct wiimote *wiimote)
 			}
 
 			/* Main switch */
-			if(1)//buf[1] != 50)
+			if(buf[1] != 50)
 			{
 				__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG,"%.2X %.2X %.2X %.2X  %.2X %.2X %.2X %.2X\n", buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7]);
 				__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG,"%.2X %.2X %.2X %.2X  %.2X %.2X %.2X %.2X\n", buf[8], buf[9], buf[10], buf[11], buf[12], buf[13], buf[14], buf[15]);
 				__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG,"%.2X %.2X %.2X %.2X  %.2X %.2X %.2X %.2X\n", buf[16], buf[17], buf[18], buf[19], buf[20], buf[21], buf[22], buf[23]);
 				__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG,"\n");//*/
 			}
+			// Extract some required information from received packets ... 
+			if(buf[1] == 32)
+			{
+				// Turned out that if the battery level is low, the report mode only returns one set of 
+				// results of type 0x32 (refer to WiiBrew WiiMote for more information on the packet)
+				// instead of continues 0x32 packets. In this case, all EE bytes in the returned packet 
+				// is set to zero. Therefore the calculated weight is not correct. The battery level is 
+				// received in packet type 0x20 (status report) at the 8th byte. Here I store the value 
+				// of the battery level, so the system can use it later.
+				intBatteryLevel = buf[7];
+				__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG, "wd_router_thread: Battery level was %.2X ...", intBatteryLevel);
+			}
+			// Check the message type and act accordingly ...
 			switch (buf[1]) 
 			{
 			case RPT_STATUS: // 0x20
-				__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG,"RPT_STATUS");
+				//__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG,"RPT_STATUS");
 				err = wd_process_status(wiimote, &buf[2], &ma);
 				break;
 			case RPT_READ_DATA: // 0x21
-				__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG,"RPT_READ_DATA");
+				//__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG,"RPT_READ_DATA");
 				err = wd_process_read(wiimote, &buf[4]) ||
 				      wd_process_btn(wiimote, &buf[2], &ma);
 				break;
@@ -830,7 +881,7 @@ void *wd_router_thread(struct wiimote *wiimote)
 				err = wd_process_write(wiimote, &buf[2]);
 				break;
 			case RPT_BTN: // 0x30
-				__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG,"RPT_BTN");
+				//__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG,"RPT_BTN");
 				err = wd_process_btn(wiimote, &buf[2], &ma);
 				break;
 			case RPT_BTN_ACC: // 0x31
@@ -889,6 +940,11 @@ void *wd_router_thread(struct wiimote *wiimote)
 			}
 		}
 	}
+	
+	(*jvm)->DetachCurrentThread(jvm);
+	env = 0;
+	blnIsRouterThreadWorking = 0;
+	
 	__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG,"finished wd_router_thread");
 	return NULL;
 }
@@ -903,6 +959,11 @@ void *wd_status_thread(struct wiimote *wiimote)
 
 	ma.count = 1;
 	status_mesg = &ma.array[0].status_mesg;
+	
+	JNIEnv* env = 0;
+	(*jvm)->AttachCurrentThread(jvm,&env, NULL);
+	
+	blnIsStatusThreadWorking = 1;
 
 	while (blnShouldStatusThreadContinue) 
 	{
@@ -1011,6 +1072,11 @@ void *wd_status_thread(struct wiimote *wiimote)
 			}
 		}
 	}
+	
+	(*jvm)->DetachCurrentThread(jvm);
+	env = 0;
+	blnIsStatusThreadWorking = 0;
+	
 	__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG,"Finished wd_status_thread");
 	return NULL;
 }

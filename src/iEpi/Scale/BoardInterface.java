@@ -128,7 +128,6 @@ public class BoardInterface
 	 * @return
 	 */
 	public native int	 	getCalLeftBottom2();
-	
 	/**
 	 * Returns whether balance board weight values are valid or not
 	 * @return
@@ -154,6 +153,11 @@ public class BoardInterface
 	 * @return
 	 */
 	public native int	 	getBottomLeftValue();
+	/**
+	 * Returns the battery level of the balance board, received from Wii message 0x20.
+	 * @return
+	 */
+	public native int		getBatteryLevel();
 
 	public BoardInterface()
 	{	}

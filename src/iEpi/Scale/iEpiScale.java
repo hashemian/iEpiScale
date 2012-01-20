@@ -30,21 +30,20 @@ import java.text.DecimalFormat;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.ProgressDialog;
 import android.content.DialogInterface;
-import android.content.Intent;
-import android.content.pm.PackageManager;
+//import android.content.Intent;
+//import android.content.pm.PackageManager;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.os.Handler;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.View.OnClickListener;
 import android.widget.Button;
 import android.widget.EditText;
-import android.widget.LinearLayout;
 import android.widget.RadioButton;
-import android.widget.ScrollView;
-import android.widget.TextView;
 
 /**
  * This class provides iEpiScale activity. 
@@ -53,18 +52,6 @@ import android.widget.TextView;
  */
 public class iEpiScale extends Activity 
 {
-	//
-	// IDs for dynamically created objects
-	//
-	private final int 			txtStatusID 		= 100;
-	/**
-	 * Maximum number of trials to start reading the weight data from the board.
-	 */
-	//private final int			MAX_READ_TRIAL		= 2;
-	/**
-	 * Maximum number of trials to read the calibration data from the board. 
-	 */
-	//private final int 			MAX_CAL_TRIAL 		= 2;
 	/**
 	 * Used to format the result of weight calculation to two decimal-point format
 	 */
@@ -72,11 +59,7 @@ public class iEpiScale extends Activity
 	/**
 	 * Represents the revision number of the current code.
 	 */
-	private int 				intRevision 		= 70;
-	/**
-	 * UI container of the current activity.
-	 */
-	private LinearLayout 		ui;
+	private int 				intRevision 		= 93;
 	/**
 	 * This flag is used by the thread which is in charge of reading weight data from the board. When set to false, 
 	 * the thread stops reading data.
@@ -91,13 +74,16 @@ public class iEpiScale extends Activity
 	private Button				btnConnectOnly;
 	private Button				btnCalibrate;
 	private Button				btnRead;
-	private RadioButton			rbtnLbs;
 	private	RadioButton			rbtnKg;
 	private EditText			txtResult;
 	/**
 	 * BoardInterface object which allows this activity to connect to the board.
 	 */
 	static BoardInterface		boardInterface;
+	/**
+	 * 
+	 */
+	static final double KG_TO_LBS_RATIO = 2.20462; 
 	
 	/**
 	 * The following arrays hold the calibration data for the board. Each cell of the board has 3 
@@ -112,7 +98,8 @@ public class iEpiScale extends Activity
 	 * Determines whether the program is already connected to a board (true) or not (false).
 	 */
 	private boolean				blnIsConnected		= false;
-
+	private ProgressDialog 		prgrsDialog;
+	public final Handler 		mHandler 			= new Handler();
 	/**
 	 * Called when the activity is first created. 
 	 */
@@ -130,6 +117,29 @@ public class iEpiScale extends Activity
 			Log.d(LOG_TAG,"The Native Bluetooth Interface object already exist!");
     }
     
+	private void setTextView(int result) 
+	{
+		if(result == -7)
+		{
+			txtResult.setText("Battery level of the board is very low. Please replace board's batteries.\n" + 
+					"Error No: " + result);
+		}
+		else if(result <= -1)
+		{
+			txtResult.setText("Could not connect to Bluetooth. Please try again.\n" + 
+					"If this problem happens again, please restart the application.\n" + 
+					"Error No: " + result);
+		}
+		else if(result == 1)
+		{
+			txtResult.setText("Connection successful.");
+			PostConnectionProcess();
+		}
+		else
+		{
+			txtResult.setText("Unknown error type.");
+		}
+	}
     /**
      * Initializes the view of the current activity
      */
@@ -141,17 +151,26 @@ public class iEpiScale extends Activity
 		btnCalibrate = (Button) findViewById(R.id.btnCalibrate);
 		btnRead = (Button) findViewById(R.id.btnRead);
 		rbtnKg = (RadioButton) findViewById(R.id.rbtnKg);
-		rbtnLbs = (RadioButton) findViewById(R.id.rbtnLbs);
 		txtResult = (EditText) findViewById(R.id.result);
 				
 		btnConnect.setOnClickListener(ConnectKey);
 		btnDisconnect.setOnClickListener(DisconnectKey);
 		
 		btnConnectOnly.setOnClickListener(ConnectOnlyKey);
+		btnConnectOnly.setEnabled(false);
+		
 		btnCalibrate.setOnClickListener(CalibrateKey);
+		btnCalibrate.setEnabled(false);
+		
 		btnRead.setOnClickListener(ReadKey);
+		btnRead.setEnabled(false);
 		
 		txtResult.setKeyListener(null);
+		
+		// Connect to the board
+		txtResult.setText("Connecting ...");
+		prgrsDialog = new ProgressDialog(this);
+		prgrsDialog.setMessage("Connecting ...\nPlease do not stand on the board while this message is shown.");
 	}
 	
 	private OnClickListener ConnectKey = new OnClickListener() 
@@ -163,36 +182,35 @@ public class iEpiScale extends Activity
 				txtResult.setText("You are already connected to a board.");
 				return;
 			}
-				
-			new AlertDialog.Builder(v.getContext())
-				.setTitle("Confirm - " + intRevision)
-				.setMessage("Please activate the board by pressing the sync button, and then click \"OK\" to continue?")
-				.setPositiveButton("OK", new DialogInterface.OnClickListener() 
+			
+			AlertDialog.Builder alertConnectionConfirmation = new AlertDialog.Builder(iEpiScale.this);
+			alertConnectionConfirmation.setMessage("Please activate the board by pressing the sync button, and then click \"OK\" to continue?" + intRevision);
+			alertConnectionConfirmation.setPositiveButton("OK", new DialogInterface.OnClickListener() 
+				{
+					public void onClick(DialogInterface dialog, int which) 
+					{
+						dialog.cancel();
+						prgrsDialog.show();
+						Thread t =new Thread(new Runnable() 
+							{
+								public void run() 
+								{						
+									final int result = boardInterface.ConnectCalibrateRead(3);
+									mHandler.post(new Runnable()
 										{
-											public void onClick(DialogInterface dialog, int which) 
+											public void run()
 											{
-												// Connect to the board
-												txtResult.setText("Connecting ...");
-												int result = boardInterface.ConnectCalibrateRead(3);
-												if(result <= -1)
-												{
-													txtResult.setText("Could not connect to Bluetooth. Please try again.\n" + 
-															"If this problem happens again, please restart the application.\n" + 
-															"Error No: " +  result);
-												}
-												else if(result == 1)
-												{
-													txtResult.setText("Connection successful.");
-													PostConnectionProcess();
-												}
-												else
-												{
-													txtResult.setText("Unknown error type.");
-												}
+												setTextView(result);
 											}
-										})
-				.setNegativeButton("Cancel", null)
-				.show();
+										});
+									prgrsDialog.dismiss();
+								}
+							});
+						t.start();
+					}
+				});
+			alertConnectionConfirmation.setNegativeButton("Cancel", null);
+			alertConnectionConfirmation.show();												
 		}
 	};
 		
@@ -224,16 +242,7 @@ public class iEpiScale extends Activity
 	{
 		public void onClick(View v) 
 		{
-//			if(!blnIsConnected)
-//			{
-//				txtResult.setText("You are not currently connected to the board.");
-//				return;
-//			}
-			
-			// First stop reading from the board ...
-			Log.d(LOG_TAG,"Set the flag to stop the thread!");
 			blnShouldStop = true;
-			boardInterface.stopReadingData();
 			
 			// Now disconnect from the board ...
 			
@@ -372,8 +381,17 @@ public class iEpiScale extends Activity
 		
 		protected void onProgressUpdate(Void... params) 
 		{
+			String strScale;
+			double weightToDisplay = totalWeight;
+			if(rbtnKg.isChecked())
+				strScale = " KG";
+			else
+			{
+				strScale = " Lbs";
+				weightToDisplay *= KG_TO_LBS_RATIO;
+			}
 			if(totalWeight != -1)
-				txtResult.setText("The current weight is: " + dfmTwoDecimalFormat.format(totalWeight));
+				txtResult.setText("The current weight is: " + dfmTwoDecimalFormat.format(weightToDisplay) + strScale);
 			else
 				txtResult.setText("Balance data is not valid.");
 	    }
@@ -385,11 +403,8 @@ public class iEpiScale extends Activity
 		Log.d(LOG_TAG, "onPause called.");
 		if(boardInterface != null)
 		{
-//			if(blnIsConnected)
-//			{
-				Log.d(LOG_TAG, "onPause: Interface is not null. Going to call disconnect!");
-				boardInterface.disconnect();
-//			}
+			Log.d(LOG_TAG, "onPause: Interface is not null. Going to call disconnect!");
+			boardInterface.disconnect();
 			boardInterface = null;
 		}
 		else
@@ -411,11 +426,8 @@ public class iEpiScale extends Activity
 		
 		if(boardInterface != null)
 		{
-//			if(blnIsConnected)
-//			{
-				Log.d(LOG_TAG, "onStop: Interface is not null. Going to call disconnect!");
-				boardInterface.disconnect();
-//			}
+			Log.d(LOG_TAG, "onStop: Interface is not null. Going to call disconnect!");
+			boardInterface.disconnect();
 			boardInterface = null;
 		}
 		else
@@ -429,11 +441,8 @@ public class iEpiScale extends Activity
 	    {
 			if(boardInterface != null)
 			{
-//				if(blnIsConnected)
-//				{
-					Log.d(LOG_TAG, "onKeyDown: Interface is not null. Going to call disconnect!");
-					boardInterface.disconnect();
-//				}
+				Log.d(LOG_TAG, "onKeyDown: Interface is not null. Going to call disconnect!");
+				boardInterface.disconnect();
 				boardInterface = null;
 			}
 			else
