@@ -27,13 +27,14 @@
 package iEpi.Scale;
 
 import java.text.DecimalFormat;
-
+import java.text.SimpleDateFormat;
+import java.util.Calendar;
+import java.util.Date;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.ProgressDialog;
+import android.bluetooth.BluetoothAdapter;
 import android.content.DialogInterface;
-//import android.content.Intent;
-//import android.content.pm.PackageManager;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Handler;
@@ -42,8 +43,14 @@ import android.view.KeyEvent;
 import android.view.View;
 import android.view.View.OnClickListener;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.RadioButton;
+import android.widget.TextView;
+
+import java.io.*;
+
+import junit.framework.Assert;
 
 /**
  * This class provides iEpiScale activity. 
@@ -55,11 +62,19 @@ public class iEpiScale extends Activity
 	/**
 	 * Used to format the result of weight calculation to two decimal-point format
 	 */
-	DecimalFormat 				dfmTwoDecimalFormat	= new DecimalFormat("#.##");
+	private DecimalFormat 		dfmTwoDecimalFormat	= new DecimalFormat("#.##");
+	/**
+	 * Used to format the current time down to hour accuracy for file storage.
+	 */
+	private SimpleDateFormat	sdfFileDateFormat = new SimpleDateFormat("yyyyMMddhh0000");
+	/**
+	 * Used to format the current time down to second accuracy to write in the file.
+	 */
+	private SimpleDateFormat	sdfStorageDateFormat = new SimpleDateFormat("yyyyMMddhhmmss");
 	/**
 	 * Represents the revision number of the current code.
 	 */
-	private int 				intRevision 		= 93;
+	private int 				intRevision 		= 95;
 	/**
 	 * This flag is used by the thread which is in charge of reading weight data from the board. When set to false, 
 	 * the thread stops reading data.
@@ -68,22 +83,24 @@ public class iEpiScale extends Activity
 	/**
 	 * Tag for error log outputs.	
 	 */
-	final static String 		LOG_TAG 			= "iEpiScale";
-	private	Button				btnConnect;
-	private Button				btnDisconnect;
-	private Button				btnConnectOnly;
-	private Button				btnCalibrate;
-	private Button				btnRead;
-	private	RadioButton			rbtnKg;
-	private EditText			txtResult;
+	final static 	String 		LOG_TAG 			= "iEpiScale";
+	/**
+	 * GUI elements
+	 */
+	private			Button		btnConnect;
+	private 		Button		btnDisconnect;
+	private			RadioButton	rbtnKg;
+	private 		EditText	txtResult;
+	private			CheckBox	chkNotRecord;
+	private			TextView	txtvInfo;
 	/**
 	 * BoardInterface object which allows this activity to connect to the board.
 	 */
 	static BoardInterface		boardInterface;
 	/**
-	 * 
+	 * The conversion ratio between KG and Lbs.
 	 */
-	static final double KG_TO_LBS_RATIO = 2.20462; 
+	static final double 		KG_TO_LBS_RATIO = 2.20462; 
 	
 	/**
 	 * The following arrays hold the calibration data for the board. Each cell of the board has 3 
@@ -101,6 +118,22 @@ public class iEpiScale extends Activity
 	private ProgressDialog 		prgrsDialog;
 	public final Handler 		mHandler 			= new Handler();
 	/**
+	 * Bluetooth MAC address as long. This is used as device identifier during data recording.
+	 */
+	private long				lngMacAddress;
+	/**
+	 * Determines the path to the location where the saved weights have to be stored. 
+	 */
+	private static final String	DATA_STORAGE_PATH 	= "/sdcard/.healthlogger/DumpedFiles/"; // TODO: This path has to be fixed before deployment.
+	/**
+	 * Determines the file extension for the saved files. 
+	 */
+	private static final String	DATA_FILE_EXT		= ".scaledat";
+	/**
+	 * Interval between each weight update operation in milliseconds
+	 */
+	private static final int	WEIGHT_UPDATE_INTERVAL = 5000;
+	/**
 	 * Called when the activity is first created. 
 	 */
     public void onCreate(Bundle savedInstanceState) 
@@ -115,31 +148,40 @@ public class iEpiScale extends Activity
 			boardInterface = new BoardInterface();
 		else 
 			Log.d(LOG_TAG,"The Native Bluetooth Interface object already exist!");
-    }
-    
-	private void setTextView(int result) 
-	{
-		if(result == -7)
+		
+		// Retrieving device MAC address and recording it ...
+		BluetoothAdapter btAdapter = BluetoothAdapter.getDefaultAdapter();
+		if(btAdapter == null)
 		{
-			txtResult.setText("Battery level of the board is very low. Please replace board's batteries.\n" + 
-					"Error No: " + result);
-		}
-		else if(result <= -1)
-		{
-			txtResult.setText("Could not connect to Bluetooth. Please try again.\n" + 
-					"If this problem happens again, please restart the application.\n" + 
-					"Error No: " + result);
-		}
-		else if(result == 1)
-		{
-			txtResult.setText("Connection successful.");
-			PostConnectionProcess();
+			deactivateRecording();
 		}
 		else
 		{
-			txtResult.setText("Unknown error type.");
+			try
+			{
+				this.lngMacAddress = convertMacToLong(btAdapter.getAddress());
+				if(this.lngMacAddress == 0)
+					deactivateRecording();
+				else
+					this.txtvInfo.setText("Your device id is set to " + Long.toString(lngMacAddress));
+			}
+			catch(Exception ex)
+			{
+				System.out.println(ex.getMessage());
+			}
 		}
-	}
+    }
+    
+    /**
+     * Deactivates saving the recorded information. This happens mainly if the process of retrieving MAC address as device identifier fails.
+     */
+    private void deactivateRecording()
+    {
+    	this.chkNotRecord.setChecked(false);
+    	this.chkNotRecord.setEnabled(false);
+    	this.txtvInfo.setText("Due to internal probelms, your weight information is not getting saved currently.");
+    }
+    
     /**
      * Initializes the view of the current activity
      */
@@ -147,28 +189,18 @@ public class iEpiScale extends Activity
 	{
 		btnConnect = (Button) findViewById(R.id.btnConnect);
 		btnDisconnect = (Button) findViewById(R.id.btnDisconnect);
-		btnConnectOnly = (Button) findViewById(R.id.btnConnectOnly);
-		btnCalibrate = (Button) findViewById(R.id.btnCalibrate);
-		btnRead = (Button) findViewById(R.id.btnRead);
 		rbtnKg = (RadioButton) findViewById(R.id.rbtnKg);
 		txtResult = (EditText) findViewById(R.id.result);
-				
+		chkNotRecord = (CheckBox) findViewById(R.id.chkNotRecord);
+		txtvInfo = (TextView) findViewById(R.id.txtvInfo);
+
 		btnConnect.setOnClickListener(ConnectKey);
 		btnDisconnect.setOnClickListener(DisconnectKey);
-		
-		btnConnectOnly.setOnClickListener(ConnectOnlyKey);
-		btnConnectOnly.setEnabled(false);
-		
-		btnCalibrate.setOnClickListener(CalibrateKey);
-		btnCalibrate.setEnabled(false);
-		
-		btnRead.setOnClickListener(ReadKey);
-		btnRead.setEnabled(false);
-		
+
 		txtResult.setKeyListener(null);
-		
+
 		// Connect to the board
-		txtResult.setText("Connecting ...");
+		//txtResult.setText("Connecting ...");
 		prgrsDialog = new ProgressDialog(this);
 		prgrsDialog.setMessage("Connecting ...\nPlease do not stand on the board while this message is shown.");
 	}
@@ -194,7 +226,7 @@ public class iEpiScale extends Activity
 						Thread t =new Thread(new Runnable() 
 							{
 								public void run() 
-								{						
+								{
 									final int result = boardInterface.ConnectCalibrateRead(3);
 									mHandler.post(new Runnable()
 										{
@@ -213,7 +245,31 @@ public class iEpiScale extends Activity
 			alertConnectionConfirmation.show();												
 		}
 	};
-		
+	
+	private void setTextView(int result) 
+	{
+		if(result == -7)
+		{
+			txtResult.setText("Battery level of the board is very low. Please replace board's batteries.\n" + 
+					"Error No: " + result);
+		}
+		else if(result <= -1)
+		{
+			txtResult.setText("Could not connect to Bluetooth. Please try again.\n" + 
+					"If this problem happens again, please restart the application.\n" + 
+					"Error No: " + result);
+		}
+		else if(result == 1)
+		{
+			txtResult.setText("Connection successful.");
+			PostConnectionProcess();
+		}
+		else
+		{
+			txtResult.setText("Unknown error type.");
+		}
+	}
+	
 	public void PostConnectionProcess()
 	{
 		calibrationDataLT[0] = boardInterface.getCalLeftTop0();
@@ -256,7 +312,7 @@ public class iEpiScale extends Activity
 		int result = boardInterface.disconnect();
 		if(result == -1)
 			txtResult.setText("Disconnection failed.");
-		else if(result == 0)
+		else if(result == 0 || result == 1)
 			txtResult.setText("Disconnected successfully.");					
 		else
 			txtResult.setText("Unknown error type.");
@@ -291,7 +347,7 @@ public class iEpiScale extends Activity
 				{
 					UpdateWeight();
 					publishProgress();
-					Thread.sleep(2000);
+					Thread.sleep(WEIGHT_UPDATE_INTERVAL);
 				}
 			}
 			catch(InterruptedException ex)
@@ -381,19 +437,36 @@ public class iEpiScale extends Activity
 		
 		protected void onProgressUpdate(Void... params) 
 		{
-			String strScale;
-			double weightToDisplay = totalWeight;
-			if(rbtnKg.isChecked())
-				strScale = " KG";
-			else
+			try
 			{
-				strScale = " Lbs";
-				weightToDisplay *= KG_TO_LBS_RATIO;
+				String strScale;
+				double weightToDisplay = totalWeight;
+				if(rbtnKg.isChecked())
+					strScale = " KG";
+				else
+				{
+					strScale = " Lbs";
+					weightToDisplay *= KG_TO_LBS_RATIO;
+				}
+				if(totalWeight != -1)
+				{
+					Date dtCurrentTime = Calendar.getInstance().getTime();
+					txtResult.setText("The current weight is: " + dfmTwoDecimalFormat.format(weightToDisplay) + strScale);
+					File flRecord = new File(DATA_STORAGE_PATH + 
+												Long.toString(lngMacAddress) + "-" + 
+												sdfFileDateFormat.format(dtCurrentTime) + 
+												DATA_FILE_EXT);
+					FileWriter fwStorage = new FileWriter(flRecord, true);
+					fwStorage.append(sdfStorageDateFormat.format(dtCurrentTime) + "\t" + totalWeight + "\n");
+					fwStorage.close();
+				}
+				else
+					txtResult.setText("Balance data is not valid.");
 			}
-			if(totalWeight != -1)
-				txtResult.setText("The current weight is: " + dfmTwoDecimalFormat.format(weightToDisplay) + strScale);
-			else
-				txtResult.setText("Balance data is not valid.");
+			catch(IOException ioex)
+			{
+				Log.d(LOG_TAG, "Error: " +  ioex.getMessage());
+			}
 	    }
 	}
 	
@@ -471,34 +544,30 @@ public class iEpiScale extends Activity
 			Log.d(LOG_TAG, "onDestroy: Interface was null. Skipped disconnection.");
 	}
 	
-	private OnClickListener ConnectOnlyKey = new OnClickListener() 
+	public static final long convertMacToLong(String mac)
 	{
-		public void onClick(View v)
+		try
 		{
-			int result = boardInterface.intConnect(3);
-			txtResult.setText("Returned connect result is: " +  result);
+			// Partial precondition check; other problems will be caught by the decoding process.
+			Assert.assertNotNull(mac);
+			
+			// Convert from a long into a mac address. Any problem will be found during the decoding process.
+			String rawLowercaseHex = mac.replaceAll(":", "").toLowerCase();
+			Long macLong = Long.decode("#" + rawLowercaseHex);
+			
+			// Confirm we have the same number.
+			String reconvertedLowercaseHex = Long.toHexString(macLong);
+			Assert.assertTrue("Could not reconvert to MAC from long. Reconverted: " + 
+					reconvertedLowercaseHex + 
+					"; Given value, less separators: " + 
+					rawLowercaseHex, 
+					rawLowercaseHex.contains(reconvertedLowercaseHex));
+			
+			return macLong;
 		}
-	};
-
-	private OnClickListener CalibrateKey = new OnClickListener() 
-	{
-		public void onClick(View v)
+		catch(Exception ex)
 		{
-			int result = boardInterface.getCalibrationData();
-			txtResult.setText("Returned calibrate result is: " +  result);
+			return 0;
 		}
-	};
-
-	private OnClickListener ReadKey = new OnClickListener() 
-	{
-		public void onClick(View v)
-		{
-			int result = boardInterface.startReadingData();
-			txtResult.setText("Returned read result is: " +  result);
-			blnShouldStop = false;
-			new WeightRep().execute();
-			blnIsConnected = true;
-		}
-	};
-
+	}
 }

@@ -7,4 +7,6 @@
     <string name="pound">Lbs</string>
     <string name="connect">Connect</string>
     <string name="disconnect">Disconnect</string>
+    <string name="notRecord">Do not save recorded weight.</string>
+    <string name="InfoTitle">Additional Information</string>
 </resources>
