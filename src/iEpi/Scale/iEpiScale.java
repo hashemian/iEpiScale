@@ -74,7 +74,7 @@ public class iEpiScale extends Activity
 	/**
 	 * Represents the revision number of the current code.
 	 */
-	private int 				intRevision 		= 95;
+	private int 				intRevision 		= 99;
 	/**
 	 * This flag is used by the thread which is in charge of reading weight data from the board. When set to false, 
 	 * the thread stops reading data.
@@ -132,7 +132,11 @@ public class iEpiScale extends Activity
 	/**
 	 * Interval between each weight update operation in milliseconds
 	 */
-	private static final int	WEIGHT_UPDATE_INTERVAL = 5000;
+	private static final int	WEIGHT_UPDATE_INTERVAL = 3000;
+	/**
+	 * 
+	 */
+	private static final int	MIN_TOTAL_WEIGHT_FROM_SENSORS = -50;
 	/**
 	 * Called when the activity is first created. 
 	 */
@@ -162,8 +166,6 @@ public class iEpiScale extends Activity
 				this.lngMacAddress = convertMacToLong(btAdapter.getAddress());
 				if(this.lngMacAddress == 0)
 					deactivateRecording();
-				else
-					this.txtvInfo.setText("Your device id is set to " + Long.toString(lngMacAddress));
 			}
 			catch(Exception ex)
 			{
@@ -179,7 +181,7 @@ public class iEpiScale extends Activity
     {
     	this.chkNotRecord.setChecked(false);
     	this.chkNotRecord.setEnabled(false);
-    	this.txtvInfo.setText("Due to internal probelms, your weight information is not getting saved currently.");
+    	this.txtvInfo.setText(R.string.WeightNotSavedError);
     }
     
     /**
@@ -202,7 +204,7 @@ public class iEpiScale extends Activity
 		// Connect to the board
 		//txtResult.setText("Connecting ...");
 		prgrsDialog = new ProgressDialog(this);
-		prgrsDialog.setMessage("Connecting ...\nPlease do not stand on the board while this message is shown.");
+		prgrsDialog.setMessage(getResources().getText(R.string.ConnectionProgressDialogMessage));
 	}
 	
 	private OnClickListener ConnectKey = new OnClickListener() 
@@ -211,12 +213,12 @@ public class iEpiScale extends Activity
 		{
 			if(blnIsConnected)
 			{
-				txtResult.setText("You are already connected to a board.");
+				txtvInfo.setText(R.string.AlreadyConnectedMessage);
 				return;
 			}
 			
 			AlertDialog.Builder alertConnectionConfirmation = new AlertDialog.Builder(iEpiScale.this);
-			alertConnectionConfirmation.setMessage("Please activate the board by pressing the sync button, and then click \"OK\" to continue?" + intRevision);
+			alertConnectionConfirmation.setMessage(getResources().getString(R.string.ConnectionConfirmationMessage) + Integer.toString(intRevision));
 			alertConnectionConfirmation.setPositiveButton("OK", new DialogInterface.OnClickListener() 
 				{
 					public void onClick(DialogInterface dialog, int which) 
@@ -250,23 +252,23 @@ public class iEpiScale extends Activity
 	{
 		if(result == -7)
 		{
-			txtResult.setText("Battery level of the board is very low. Please replace board's batteries.\n" + 
+			txtResult.setText("First one");
+			txtvInfo.setText(getResources().getText(R.string.LowBatteryErrorMessage) +  
 					"Error No: " + result);
 		}
 		else if(result <= -1)
 		{
-			txtResult.setText("Could not connect to Bluetooth. Please try again.\n" + 
-					"If this problem happens again, please restart the application.\n" + 
+			txtvInfo.setText(getResources().getText(R.string.GeneralErrorMessage) +
 					"Error No: " + result);
 		}
 		else if(result == 1)
 		{
-			txtResult.setText("Connection successful.");
+			txtvInfo.setText(R.string.ConnectionSuccessful);
 			PostConnectionProcess();
 		}
 		else
 		{
-			txtResult.setText("Unknown error type.");
+			txtvInfo.setText(R.string.UnknownErrorMessage);
 		}
 	}
 	
@@ -311,11 +313,11 @@ public class iEpiScale extends Activity
 	{
 		int result = boardInterface.disconnect();
 		if(result == -1)
-			txtResult.setText("Disconnection failed.");
+			txtvInfo.setText(R.string.DisconnectionFailed);
 		else if(result == 0 || result == 1)
-			txtResult.setText("Disconnected successfully.");					
+			txtvInfo.setText(R.string.DisconnectionSuccessful);					
 		else
-			txtResult.setText("Unknown error type.");
+			txtvInfo.setText(R.string.UnknownErrorMessage);
 		
 /*        PackageManager packageManager = getPackageManager();
 
@@ -439,29 +441,43 @@ public class iEpiScale extends Activity
 		{
 			try
 			{
-				String strScale;
+				int intScaleResourceId;
 				double weightToDisplay = totalWeight;
 				if(rbtnKg.isChecked())
-					strScale = " KG";
+					intScaleResourceId = R.string.kilogram;
 				else
 				{
-					strScale = " Lbs";
+					intScaleResourceId = R.string.pound;
 					weightToDisplay *= KG_TO_LBS_RATIO;
 				}
 				if(totalWeight != -1)
 				{
-					Date dtCurrentTime = Calendar.getInstance().getTime();
-					txtResult.setText("The current weight is: " + dfmTwoDecimalFormat.format(weightToDisplay) + strScale);
-					File flRecord = new File(DATA_STORAGE_PATH + 
-												Long.toString(lngMacAddress) + "-" + 
-												sdfFileDateFormat.format(dtCurrentTime) + 
-												DATA_FILE_EXT);
-					FileWriter fwStorage = new FileWriter(flRecord, true);
-					fwStorage.append(sdfStorageDateFormat.format(dtCurrentTime) + "\t" + totalWeight + "\n");
-					fwStorage.close();
+					if(totalWeight < MIN_TOTAL_WEIGHT_FROM_SENSORS)
+					{
+						txtResult.setText("Second one");
+						txtvInfo.setText(R.string.LowBatteryErrorMessage);
+					}
+					else
+					{
+						txtResult.setText(dfmTwoDecimalFormat.format(weightToDisplay) + " " + getResources().getString(intScaleResourceId));
+						if(!chkNotRecord.isChecked())
+						{
+							Date dtCurrentTime = Calendar.getInstance().getTime();
+							File flRecord = new File(DATA_STORAGE_PATH + 
+														Long.toString(lngMacAddress) + "-" + 
+														sdfFileDateFormat.format(dtCurrentTime) + 
+														DATA_FILE_EXT);
+							FileWriter fwStorage = new FileWriter(flRecord, true);
+							fwStorage.append(sdfStorageDateFormat.format(dtCurrentTime) + "\t" + totalWeight + "\n");
+							fwStorage.close();
+						}
+					}
 				}
 				else
-					txtResult.setText("Balance data is not valid.");
+				{
+					txtResult.setText("");
+					txtvInfo.setText(R.string.InvalidBalanceData);
+				}
 			}
 			catch(IOException ioex)
 			{

@@ -27,3 +27,4 @@ LOCAL_SRC_FILES := BTL.c
 LOCAL_STATIC_LIBRARIES := hci btutil
 LOCAL_LDLIBS := -L$(SYSROOT)/usr/lib -llog
 include $(BUILD_SHARED_LIBRARY)  
+LOCAL_CFLAGS := -g

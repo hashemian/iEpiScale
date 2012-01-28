@@ -9,4 +9,15 @@
     <string name="disconnect">Disconnect</string>
     <string name="notRecord">Do not save recorded weight.</string>
     <string name="InfoTitle">Additional Information</string>
+    <string name="WeightNotSavedError">Due to internal problems, your weight information is not getting saved currently.</string>
+    <string name="ConnectionProgressDialogMessage">Connecting ...\nPlease do not stand on the board while this message is shown.</string>
+    <string name="AlreadyConnectedMessage">You are already connected to the board.</string>
+    <string name="ConnectionConfirmationMessage">Please activate the board by pressing the sync button, and then click \"OK\" to continue?</string>
+    <string name="LowBatteryErrorMessage">Battery level of the board is very low. Please replace board\'s batteries.\n\n</string>
+    <string name="GeneralErrorMessage">Could not connect to Bluetooth. Please restart the application. Also note:\n1. The board should be blinking while the program is trying to connect. You can make sure on this by pressing and keeping \'sync\' button underneath the board.\n2. If this problem happens again, turn the Bluetooth off and on again from Settings, Wireless and networks.\n\n</string>
+    <string name="ConnectionSuccessful">Connection successful.</string>
+    <string name="UnknownErrorMessage">Unknown error type.</string>
+    <string name="DisconnectionFailed">Disconnection failed.</string>
+    <string name="DisconnectionSuccessful">Disconnected successfully.</string>
+    <string name="InvalidBalanceData">Balance data is not valid.</string>
 </resources>

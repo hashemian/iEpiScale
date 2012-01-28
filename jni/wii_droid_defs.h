@@ -19,7 +19,7 @@
 #ifndef WII_DROID_DEFS_H
 #define WII_DROID_DEFS_H
 
-#define DEBUG_TAG "iEpiScaleJNI80" 
+#define DEBUG_TAG "iEpiScaleJNI84" 
 #define RPT_READ_REQ_LEN 6
 #define READ_BUF_LEN 23
 #define RPT_WRITE_LEN 21

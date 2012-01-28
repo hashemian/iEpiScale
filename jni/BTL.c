@@ -133,9 +133,13 @@ jint Java_iEpi_Scale_BoardInterface_ConnectCalibrateRead(JNIEnv* env, jobject th
 	
 	__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG, "StartupModule: Making sure the battery level is enough ...");
 	sleep(2);
-	if(intBatteryLevel <= 0xB9)
+	__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG, "StartupModule: Battery level was %.2X ...", intBatteryLevel);
+	// Currently this section is deactivated, as when I tested the program on few boards, 
+	// turned out that not all of them return the same value as battery level when they have a low battery. So for now, 
+	// instead of checking this here, I check it in the Java code whether the value I get from sensors is minimum or not 
+	// (-50 KG). If the board returns -50 or below, most probably there is an issue with the battery. 
+	if(0)//intBatteryLevel < 0x00)
 	{
-		__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG, "StartupModule: Battery level was %.2X ...", intBatteryLevel);
 		Java_iEpi_Scale_BoardInterface_disconnect();
 		return BATTERY_LOW;
 	}
@@ -192,7 +196,7 @@ jint Java_iEpi_Scale_BoardInterface_intConnect( JNIEnv* env,jobject thiz, int sc
 	{
 		devId = hci_get_route(NULL);
 		hci_devba(devId, &src);
-	} 
+	}
 	else
 		bacpy(&src, &btDevAddr);
 		
@@ -254,9 +258,9 @@ jint Java_iEpi_Scale_BoardInterface_intConnect( JNIEnv* env,jobject thiz, int sc
 		//
 		// Compare the name of the recently found device with the Nintendo Balance Board name ...
 		//
-		if((strcmp(name,"Nintendo RVL-WBC-01") == 0) ||
+		if(//(strcmp(name,"Nintendo RVL-WBC-01") == 0) ||
 		   (strcmp(strAddr,"00:26:59:2C:86:E8") == 0) ||
-		   (strcmp(strAddr,"01:2A:19:41:53:E2")))
+		   (strcmp(strAddr,"A4:C0:E1:93:D2:FC") == 0))
 		{
 			__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG, "Discover: Found a balance board ...");
 			struct sockaddr_l2 remote_addr;
