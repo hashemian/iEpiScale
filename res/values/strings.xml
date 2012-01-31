@@ -20,4 +20,5 @@
     <string name="DisconnectionFailed">Disconnection failed.</string>
     <string name="DisconnectionSuccessful">Disconnected successfully.</string>
     <string name="InvalidBalanceData">Balance data is not valid.</string>
+    <string name="survey">Click here to fill a short survey</string>
 </resources>

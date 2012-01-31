@@ -35,6 +35,8 @@ import android.app.AlertDialog;
 import android.app.ProgressDialog;
 import android.bluetooth.BluetoothAdapter;
 import android.content.DialogInterface;
+import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Handler;
@@ -74,7 +76,7 @@ public class iEpiScale extends Activity
 	/**
 	 * Represents the revision number of the current code.
 	 */
-	private int 				intRevision 		= 99;
+	private int 				intRevision 		= 04;
 	/**
 	 * This flag is used by the thread which is in charge of reading weight data from the board. When set to false, 
 	 * the thread stops reading data.
@@ -89,6 +91,7 @@ public class iEpiScale extends Activity
 	 */
 	private			Button		btnConnect;
 	private 		Button		btnDisconnect;
+	private			Button		btnSurvey;
 	private			RadioButton	rbtnKg;
 	private 		EditText	txtResult;
 	private			CheckBox	chkNotRecord;
@@ -191,6 +194,7 @@ public class iEpiScale extends Activity
 	{
 		btnConnect = (Button) findViewById(R.id.btnConnect);
 		btnDisconnect = (Button) findViewById(R.id.btnDisconnect);
+		btnSurvey = (Button) findViewById(R.id.btnSurvey);
 		rbtnKg = (RadioButton) findViewById(R.id.rbtnKg);
 		txtResult = (EditText) findViewById(R.id.result);
 		chkNotRecord = (CheckBox) findViewById(R.id.chkNotRecord);
@@ -198,6 +202,7 @@ public class iEpiScale extends Activity
 
 		btnConnect.setOnClickListener(ConnectKey);
 		btnDisconnect.setOnClickListener(DisconnectKey);
+		btnSurvey.setOnClickListener(launchSurvey);
 
 		txtResult.setKeyListener(null);
 
@@ -206,6 +211,23 @@ public class iEpiScale extends Activity
 		prgrsDialog = new ProgressDialog(this);
 		prgrsDialog.setMessage(getResources().getText(R.string.ConnectionProgressDialogMessage));
 	}
+	
+	private OnClickListener launchSurvey = new OnClickListener()
+	{
+		public void onClick(View v)
+		{
+			PackageManager packageManager = getPackageManager();
+
+	        Intent surveyScreenIntent = packageManager.getLaunchIntentForPackage("com.surveyapp");
+
+			// pass in a file name and timeout time in milliseconds here
+			String surveyID = "loopexamplesurvey.xml";
+			surveyScreenIntent.putExtra("com.iSurveyor.SurveyXML", surveyID);
+			int timeOutInMS = -1; //-1 indicates NO timeout
+			surveyScreenIntent.putExtra("com.iSurveyor.SurveyTimeOutInMS", timeOutInMS);
+			startActivityForResult(surveyScreenIntent, 0);		
+		}
+	};
 	
 	private OnClickListener ConnectKey = new OnClickListener() 
 	{
@@ -252,7 +274,6 @@ public class iEpiScale extends Activity
 	{
 		if(result == -7)
 		{
-			txtResult.setText("First one");
 			txtvInfo.setText(getResources().getText(R.string.LowBatteryErrorMessage) +  
 					"Error No: " + result);
 		}
@@ -317,18 +338,7 @@ public class iEpiScale extends Activity
 		else if(result == 0 || result == 1)
 			txtvInfo.setText(R.string.DisconnectionSuccessful);					
 		else
-			txtvInfo.setText(R.string.UnknownErrorMessage);
-		
-/*        PackageManager packageManager = getPackageManager();
-
-        Intent surveyScreenIntent = packageManager.getLaunchIntentForPackage("com.surveyapp");
-
-		// pass in a file name and timeout time in milliseconds here
-		String surveyID = "loopexamplesurvey.xml";
-		surveyScreenIntent.putExtra("com.iSurveyor.SurveyXML", surveyID);
-		int timeOutInMS = -1; //-1 indicates NO timeout
-		surveyScreenIntent.putExtra("com.iSurveyor.SurveyTimeOutInMS", timeOutInMS);
-		startActivityForResult(surveyScreenIntent, 0);*/		
+			txtvInfo.setText(R.string.UnknownErrorMessage);		
 	}
 	
 	private class WeightRep extends AsyncTask<Void,Void,Void>
@@ -454,7 +464,8 @@ public class iEpiScale extends Activity
 				{
 					if(totalWeight < MIN_TOTAL_WEIGHT_FROM_SENSORS)
 					{
-						txtResult.setText("Second one");
+						blnShouldStop = true;
+						boardInterface.disconnect();
 						txtvInfo.setText(R.string.LowBatteryErrorMessage);
 					}
 					else

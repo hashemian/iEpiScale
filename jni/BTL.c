@@ -198,7 +198,9 @@ jint Java_iEpi_Scale_BoardInterface_intConnect( JNIEnv* env,jobject thiz, int sc
 		hci_devba(devId, &src);
 	}
 	else
+	{
 		bacpy(&src, &btDevAddr);
+	}
 		
 	//
 	// open socket
@@ -207,7 +209,7 @@ jint Java_iEpi_Scale_BoardInterface_intConnect( JNIEnv* env,jobject thiz, int sc
 	int sock = hci_open_dev(devId);
 	if (devId < 0 || sock < 0) 
 	{
-		__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG, "Failed to open the socket."); 
+		__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG, "Failed to open the socket.");
 		return SOCKET_OPEN_FAILURE;
 	}
 		
@@ -230,10 +232,14 @@ jint Java_iEpi_Scale_BoardInterface_intConnect( JNIEnv* env,jobject thiz, int sc
 	if (num_rsp < 0)
 	{
 		__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG, "Negative number of devices discovered: %d",num_rsp);
+		close(sock);
 		return NEGATIVE_DEVICE_COUNT;
 	}
 	else if(num_rsp == 0)
+	{
+		close(sock);
 		return NO_BT_DEV_FOUND;
+	}
 
 	int rsp_counter,j, err = -1, found = -1;
 	for (rsp_counter = 0; rsp_counter < num_rsp; rsp_counter++) 
@@ -243,8 +249,8 @@ jint Java_iEpi_Scale_BoardInterface_intConnect( JNIEnv* env,jobject thiz, int sc
 		//
 		char name[248] = {0};
 		memset(name, 0, sizeof(name));
-		if (hci_read_remote_name(sock, &(info+rsp_counter)->bdaddr, sizeof(name), name, 2000) < 0)
-		        strcpy(name, "");
+		if (hci_read_remote_name(sock, &(info+rsp_counter)->bdaddr, sizeof(name), name, 0) < 0)
+		        strcpy(name, "[unknown]");
 		//
 		// read class
 		//
@@ -255,10 +261,12 @@ jint Java_iEpi_Scale_BoardInterface_intConnect( JNIEnv* env,jobject thiz, int sc
 		bacpy(&dst, &(info+rsp_counter)->bdaddr);
 		ba2str(&dst, strAddr);
 
+		__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG, "found another device called %s\n", name);
+		__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG, "Device address is: %s\n", strAddr);
 		//
 		// Compare the name of the recently found device with the Nintendo Balance Board name ...
 		//
-		if(//(strcmp(name,"Nintendo RVL-WBC-01") == 0) ||
+		if((strcmp(name,"Nintendo RVL-WBC-01") == 0) ||
 		   (strcmp(strAddr,"00:26:59:2C:86:E8") == 0) ||
 		   (strcmp(strAddr,"A4:C0:E1:93:D2:FC") == 0))
 		{
@@ -328,12 +336,8 @@ jint Java_iEpi_Scale_BoardInterface_intConnect( JNIEnv* env,jobject thiz, int sc
 				}
 			}
 			__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG, "intConnect: Returning WII_CONNECTION_CREATION_ERR ...");
+			close(sock);
 			return WII_CONNECTION_CREATION_ERR;
-		}
-		else
-		{
-			__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG, "found another device called %s\n", name);
-			__android_log_print(ANDROID_LOG_DEBUG, DEBUG_TAG, "Device address is: %s\n", strAddr);
 		}
 	}
 	if (sock >= 0) 
