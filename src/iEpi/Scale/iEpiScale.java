@@ -62,6 +62,54 @@ import junit.framework.Assert;
 public class iEpiScale extends Activity 
 {
 	/**
+	 * Tag for error log outputs.	
+	 */
+	final static 	String 		LOG_TAG 			= "iEpiScale";
+	/**
+	 * The conversion ratio between KG and Lbs.
+	 */
+	static final double 		KG_TO_LBS_RATIO = 2.20462; 
+	/**
+	 * Determines the path to the location where the saved weights have to be stored. 
+	 */
+	private static final String	DATA_STORAGE_PATH 	= "/sdcard/.healthlogger/DumpedFiles/"; // TODO: This path has to be fixed before deployment.
+	/**
+	 * Determines the file extension for the saved files. 
+	 */
+	private static final String	DATA_FILE_EXT		= ".scaledat";
+	/**
+	 * Interval between each weight update operation in milliseconds
+	 */
+	private static final int	WEIGHT_UPDATE_INTERVAL = 3000;
+	/**
+	 * The value here shows the minimum total weight that sensors can show, while we still can 
+	 * interpret it as the correct value (e.g. due to holding the sensors upside down, etc.)
+	 * Values less than this constant are interpreted as incorrect value (e.g. due to low battery)
+	 */
+	private static final int	MIN_TOTAL_WEIGHT_FROM_SENSORS = -20;
+	/**
+	 * This value shows the minimum value from sensors which can be interpreted as "human is on the board"
+	 * Values lower than this shows no one is standing on the board.
+	 */
+	private static final int	MIN_HUMAN_WEIGHT = 25;
+	/**
+	 * Shows how many data samples should be shown to the user (while their are standing on the board)
+	 * before the application launches the survey app. 
+	 */
+	private static final int	MAX_SAMPLES_BEFORE_SURVEY_LAUNCH = 3;
+	/**
+	 * Application package name for survey app. This is used by packageManager to find the survey application.
+	 */
+    private static final String	SURVEY_APP_NAME = "com.surveyapp";
+    /**
+     * Survey file name, used by the survey application.
+     */
+    private static final String	SURVEY_FILE_NAME = "iepi_scale_survey.xml";
+    /**
+     * Timeout for the survey app. Shows how long after the survey launch, it has to disappear?
+     */
+    private static final int	SURVEY_NO_TIMEOUT = -1;
+	/**
 	 * Used to format the result of weight calculation to two decimal-point format
 	 */
 	private DecimalFormat 		dfmTwoDecimalFormat	= new DecimalFormat("#.##");
@@ -83,10 +131,6 @@ public class iEpiScale extends Activity
 	 */
 	private static boolean 		blnShouldStop		= false;
 	/**
-	 * Tag for error log outputs.	
-	 */
-	final static 	String 		LOG_TAG 			= "iEpiScale";
-	/**
 	 * GUI elements
 	 */
 	private			Button		btnConnect;
@@ -101,11 +145,6 @@ public class iEpiScale extends Activity
 	 */
 	static BoardInterface		boardInterface;
 	/**
-	 * The conversion ratio between KG and Lbs.
-	 */
-	static final double 		KG_TO_LBS_RATIO = 2.20462; 
-	
-	/**
 	 * The following arrays hold the calibration data for the board. Each cell of the board has 3 
 	 * calibration values, being held at the relevant array.
 	 */
@@ -113,7 +152,6 @@ public class iEpiScale extends Activity
 	private int[] 				calibrationDataLB 	= new int[3];
 	private int[] 				calibrationDataRT 	= new int[3];
 	private int[] 				calibrationDataRB 	= new int[3];
-	
 	/**
 	 * Determines whether the program is already connected to a board (true) or not (false).
 	 */
@@ -124,22 +162,6 @@ public class iEpiScale extends Activity
 	 * Bluetooth MAC address as long. This is used as device identifier during data recording.
 	 */
 	private long				lngMacAddress;
-	/**
-	 * Determines the path to the location where the saved weights have to be stored. 
-	 */
-	private static final String	DATA_STORAGE_PATH 	= "/sdcard/.healthlogger/DumpedFiles/"; // TODO: This path has to be fixed before deployment.
-	/**
-	 * Determines the file extension for the saved files. 
-	 */
-	private static final String	DATA_FILE_EXT		= ".scaledat";
-	/**
-	 * Interval between each weight update operation in milliseconds
-	 */
-	private static final int	WEIGHT_UPDATE_INTERVAL = 3000;
-	/**
-	 * 
-	 */
-	private static final int	MIN_TOTAL_WEIGHT_FROM_SENSORS = -50;
 	/**
 	 * Called when the activity is first created. 
 	 */
@@ -166,6 +188,7 @@ public class iEpiScale extends Activity
 		{
 			try
 			{
+				TuenBtOn();
 				this.lngMacAddress = convertMacToLong(btAdapter.getAddress());
 				if(this.lngMacAddress == 0)
 					deactivateRecording();
@@ -174,6 +197,23 @@ public class iEpiScale extends Activity
 			{
 				System.out.println(ex.getMessage());
 			}
+		}
+    }
+    
+    /**
+     * Code is borrowed from HealthLogger
+     */
+    private void TuenBtOn()
+    {
+		// Ensure bluetooth is at least on, otherwise we can't do work.
+		BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
+		
+		// Ask to enable the bluetooth adapter if it is off.
+		// HACK: Assumes this is the first screen.
+		if (!adapter.isEnabled())
+		{
+			Intent enableBluetoothIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
+			startActivity(enableBluetoothIntent);
 		}
     }
     
@@ -202,7 +242,7 @@ public class iEpiScale extends Activity
 
 		btnConnect.setOnClickListener(ConnectKey);
 		btnDisconnect.setOnClickListener(DisconnectKey);
-		btnSurvey.setOnClickListener(launchSurvey);
+		btnSurvey.setOnClickListener(btnSurveyClick);
 
 		txtResult.setKeyListener(null);
 
@@ -212,22 +252,25 @@ public class iEpiScale extends Activity
 		prgrsDialog.setMessage(getResources().getText(R.string.ConnectionProgressDialogMessage));
 	}
 	
-	private OnClickListener launchSurvey = new OnClickListener()
+	private OnClickListener btnSurveyClick = new OnClickListener()
 	{
 		public void onClick(View v)
 		{
-			PackageManager packageManager = getPackageManager();
-
-	        Intent surveyScreenIntent = packageManager.getLaunchIntentForPackage("com.surveyapp");
-
-			// pass in a file name and timeout time in milliseconds here
-			String surveyID = "loopexamplesurvey.xml";
-			surveyScreenIntent.putExtra("com.iSurveyor.SurveyXML", surveyID);
-			int timeOutInMS = -1; //-1 indicates NO timeout
-			surveyScreenIntent.putExtra("com.iSurveyor.SurveyTimeOutInMS", timeOutInMS);
-			startActivityForResult(surveyScreenIntent, 0);		
+			launchSurvey();
 		}
 	};
+	
+	private void launchSurvey()
+	{
+		PackageManager packageManager = getPackageManager();
+
+        Intent surveyScreenIntent = packageManager.getLaunchIntentForPackage(SURVEY_APP_NAME);
+
+		// pass in a file name and timeout time in milliseconds here
+		surveyScreenIntent.putExtra("com.iSurveyor.SurveyXML", SURVEY_FILE_NAME);
+		surveyScreenIntent.putExtra("com.iSurveyor.SurveyTimeOutInMS", SURVEY_NO_TIMEOUT);
+		startActivityForResult(surveyScreenIntent, 0);
+	}
 	
 	private OnClickListener ConnectKey = new OnClickListener() 
 	{
@@ -344,6 +387,7 @@ public class iEpiScale extends Activity
 	private class WeightRep extends AsyncTask<Void,Void,Void>
 	{
 		double totalWeight = 0.0;
+		int sampleCounter = 0;
 		
 		public WeightRep()
 		{
@@ -470,6 +514,9 @@ public class iEpiScale extends Activity
 					}
 					else
 					{
+						if(totalWeight > MIN_HUMAN_WEIGHT)
+							sampleCounter++;
+						
 						txtResult.setText(dfmTwoDecimalFormat.format(weightToDisplay) + " " + getResources().getString(intScaleResourceId));
 						if(!chkNotRecord.isChecked())
 						{
@@ -481,6 +528,12 @@ public class iEpiScale extends Activity
 							FileWriter fwStorage = new FileWriter(flRecord, true);
 							fwStorage.append(sdfStorageDateFormat.format(dtCurrentTime) + "\t" + totalWeight + "\n");
 							fwStorage.close();
+						}
+						
+						if(sampleCounter > MAX_SAMPLES_BEFORE_SURVEY_LAUNCH)
+						{
+							sampleCounter = 0;
+							launchSurvey();
 						}
 					}
 				}
